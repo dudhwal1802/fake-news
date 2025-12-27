@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Data (do not commit Kaggle datasets)
+data/raw/*.csv
+data/raw/*.zip
+
+# Optional: keep your personal labeled data private
+data/raw/custom_labeled.csv
+
+# Streamlit
+.streamlit/
+
+# OS
+.DS_Store
+Thumbs.db
