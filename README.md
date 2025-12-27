@@ -137,11 +137,11 @@ streamlit run app.py
 After training, you will get metrics in the terminal.
 Record them in your report.
 
-Example format:
+Final results (from latest training run):
 | Model | Accuracy | Precision | Recall | F1 |
 |------|----------|-----------|--------|----|
-| Naive Bayes (TF-IDF) | (your value) | (your value) | (your value) | (your value) |
-| Logistic Regression (TF-IDF) | (your value) | (your value) | (your value) | (your value) |
+| Naive Bayes (TF-IDF) | 0.9614 | 0.9605 | 0.9585 | 0.9595 |
+| Logistic Regression (TF-IDF) | 0.9918 | 0.9889 | 0.9939 | 0.9914 |
 
 ## 13) Conclusion
 This project shows that classical ML algorithms can detect fake news effectively using TF-IDF features. Logistic Regression often provides higher accuracy, while Naive Bayes is faster and simpler. The Streamlit app makes the system easy to use.
