@@ -1,4 +1,6 @@
-import os
+from __future__ import annotations
+
+from pathlib import Path
 
 import joblib
 import streamlit as st
@@ -6,12 +8,24 @@ import streamlit as st
 from src.text_preprocess import basic_clean_text
 
 
+# IMPORTANT (Streamlit requirement): set_page_config must be the first Streamlit
+# command in the script. If it's called after decorators like @st.cache_resource
+# are evaluated, Streamlit Community Cloud can crash on startup.
+st.set_page_config(page_title="Fake News Detection", layout="centered")
+
+
+ROOT_DIR = Path(__file__).resolve().parent
+MODELS_DIR = ROOT_DIR / "models"
+NB_MODEL_PATH = MODELS_DIR / "naive_bayes_tfidf.joblib"
+LR_MODEL_PATH = MODELS_DIR / "logistic_regression_tfidf.joblib"
+
+
 @st.cache_resource
 def load_models():
     # Streamlit UI stays simple: we load the default TF-IDF models.
     # (Training script also supports BoW via --features bow, if needed.)
-    nb = joblib.load("models/naive_bayes_tfidf.joblib")
-    lr = joblib.load("models/logistic_regression_tfidf.joblib")
+    nb = joblib.load(NB_MODEL_PATH)
+    lr = joblib.load(LR_MODEL_PATH)
     return nb, lr
 
 
@@ -52,8 +66,6 @@ def label_to_text(label: int) -> str:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Fake News Detection", layout="centered")
-
     st.title("Fake News Detection")
     st.caption(
         "MCA final year mini/major project (Educational purpose only). "
@@ -90,10 +102,7 @@ def main() -> None:
             submitted = st.form_submit_button("Predict")
 
     # Friendly guidance if models are not trained yet.
-    if not (
-        os.path.exists("models/naive_bayes_tfidf.joblib")
-        and os.path.exists("models/logistic_regression_tfidf.joblib")
-    ):
+    if not (NB_MODEL_PATH.exists() and LR_MODEL_PATH.exists()):
         st.info(
             "Models are not found yet. Please train them first by running:\n\n"
             "`python -m src.train_models --features tfidf`\n\n"
@@ -103,6 +112,14 @@ def main() -> None:
     if submitted:
         if not user_text.strip():
             st.warning("Please enter some text to predict.")
+            return
+
+        if not (NB_MODEL_PATH.exists() and LR_MODEL_PATH.exists()):
+            st.error(
+                "Model files are missing on the server. "
+                "Please train models locally and commit/push the `models/*.joblib` files, "
+                "or re-deploy after uploading them."
+            )
             return
 
         with st.spinner("Analyzing text..."):
