@@ -1,18 +1,36 @@
+"""Streamlit Community Cloud entrypoint.
+
+Streamlit Cloud often expects a file named `streamlit_app.py` by default.
+Our main app UI lives in `app.py`, so this file simply delegates to it.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
+import io
 
 import joblib
 import streamlit as st
+import pandas as pd
 
-from src.text_preprocess import basic_clean_text
+from src.text_preprocess import (
+    basic_clean_text,
+    count_urls,
+    count_exclamation_marks,
+    get_sentiment_polarity,
+    get_sentiment_subjectivity,
+)
+from src.feature_importance import get_top_features, extract_suspicious_words_from_text
 
 
 # IMPORTANT (Streamlit requirement): set_page_config must be the first Streamlit
 # command in the script. If it's called after decorators like @st.cache_resource
 # are evaluated, Streamlit Community Cloud can crash on startup.
-st.set_page_config(page_title="Fake News Detection", layout="centered")
-
+st.set_page_config(
+    page_title="Fake News Detection",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
 ROOT_DIR = Path(__file__).resolve().parent
 MODELS_DIR = ROOT_DIR / "models"
@@ -65,92 +83,290 @@ def label_to_text(label: int) -> str:
     return "Real News" if label == 1 else "Fake News"
 
 
+def analyze_text_features(text: str) -> dict:
+    """Extract linguistic and style features from text."""
+    return {
+        "URLs": count_urls(text),
+        "Exclamation Marks": count_exclamation_marks(text),
+        "Sentiment Polarity": get_sentiment_polarity(text),
+        "Subjectivity": get_sentiment_subjectivity(text),
+    }
+
+
+def display_prediction_result(pred: int, confidence: float, user_text: str, model_name: str, model) -> None:
+    """Display prediction result with all details."""
+    st.subheader("📊 Prediction Result")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        result_text = label_to_text(pred)
+        if pred == 1:
+            st.success(f"✓ **Prediction: {result_text}**", icon="✓")
+            st.markdown(f"**Confidence: {confidence * 100:.1f}%**", help="How sure the model is about this prediction")
+        else:
+            st.error(f"⚠ **Prediction: {result_text}**", icon="⚠")
+            st.markdown(f"**Confidence: {confidence * 100:.1f}%**", help="How sure the model is about this prediction")
+        
+        # Confidence bar
+        st.progress(min(max(confidence, 0.0), 1.0))
+    
+    with col2:
+        st.metric("Algorithm Used", "Naive Bayes" if "Naive" in model_name else "Logistic Regression")
+        st.metric("Feature Type", "TF-IDF")
+    
+    # Text analysis features
+    st.subheader("📝 Text Analysis")
+    features_analysis = analyze_text_features(user_text)
+    
+    feature_cols = st.columns(4)
+    for (feature_name, value), col in zip(features_analysis.items(), feature_cols):
+        with col:
+            if isinstance(value, float):
+                st.metric(feature_name, f"{value:.2f}")
+            else:
+                st.metric(feature_name, value)
+    
+    # Show important words
+    st.subheader("🔍 Important Words (Feature Importance)")
+    try:
+        top_words, top_scores, interpretation = get_top_features(model, model_name, n_features=15)
+        
+        if top_words:
+            feature_df = pd.DataFrame({
+                "Word": top_words,
+                "Importance Score": [f"{abs(s):.4f}" for s in top_scores],
+                "Indicates": [interpretation.get(w, "") for w in top_words]
+            })
+            st.dataframe(feature_df, width=800, hide_index=True)
+            
+            # Highlight suspicious words in user text
+            suspicious = extract_suspicious_words_from_text(user_text, top_words)
+            if suspicious:
+                st.info(f"**Important words found in your text:** {', '.join(set(suspicious))}")
+    except Exception as e:
+        st.warning(f"Could not extract feature importance: {e}")
+    
+    # Cleaned text
+    cleaned = basic_clean_text(user_text)
+    raw_words = len(user_text.split())
+    cleaned_words = len(cleaned.split())
+    
+    with st.expander("📋 Show cleaned text (for understanding)"):
+        st.caption(f"Original words: {raw_words} → After cleaning: {cleaned_words}")
+        st.code(cleaned if cleaned else "(empty after cleaning)", language="text")
+
+
+def process_batch_csv(uploaded_file, model_name: str, model) -> pd.DataFrame:
+    """Process batch predictions from CSV file."""
+    try:
+        df = pd.read_csv(uploaded_file)
+        
+        # Check if 'text' column exists
+        if 'text' not in df.columns:
+            st.error("❌ CSV must have a 'text' column!")
+            return None
+        
+        results = []
+        progress_bar = st.progress(0)
+        
+        for idx, row in df.iterrows():
+            text = str(row['text'])
+            if len(text.strip()) == 0:
+                results.append({
+                    'text': text[:100],
+                    'prediction': 'N/A',
+                    'confidence': 'N/A'
+                })
+            else:
+                pred, conf = predict_with_confidence(model, text)
+                results.append({
+                    'text': text[:100],
+                    'prediction': label_to_text(pred),
+                    'confidence': f"{conf * 100:.1f}%"
+                })
+            
+            progress_bar.progress((idx + 1) / len(df))
+        
+        results_df = pd.DataFrame(results)
+        return results_df
+    
+    except Exception as e:
+        st.error(f"❌ Error processing CSV: {e}")
+        return None
+
+
 def main() -> None:
-    st.title("Fake News Detection")
+    # Sidebar navigation
+    with st.sidebar:
+        st.title("Navigation")
+        page = st.radio("Choose mode:", ["🏠 Single Prediction", "📊 Batch Processing", "📈 Model Info"])
+    
+    # Header
+    st.title("🚀 Fake News Detection System")
     st.caption(
-        "MCA final year mini/major project (Educational purpose only). "
-        "Predictions may be wrong—do not use for real-world decisions."
+        "MCA Final Year Project | Educational purpose only | "
+        "Do not use for real-world decisions"
     )
     st.divider()
-
-    left, right = st.columns([2, 1], gap="large")
-
-    with right:
-        st.subheader("Settings")
+    
+    # Check if models exist
+    models_exist = NB_MODEL_PATH.exists() and LR_MODEL_PATH.exists()
+    if not models_exist:
+        st.warning(
+            "⚠️ **Models not found!** Please train them first:\n\n"
+            "```bash\n"
+            "python -m src.train_models --features tfidf --tune\n"
+            "```\n\n"
+            "Then refresh this page."
+        )
+        return
+    
+    # PAGE: Single Prediction
+    if page == "🏠 Single Prediction":
+        left, right = st.columns([2, 1], gap="large")
+        
+        with right:
+            st.subheader("⚙️ Settings")
+            algo = st.selectbox(
+                "Algorithm",
+                ["Naive Bayes (TF-IDF)", "Logistic Regression (TF-IDF)"],
+                index=1,
+            )
+            st.caption(
+                "💡 **Tip:** Logistic Regression usually gives higher accuracy."
+            )
+        
+        with left:
+            st.subheader("📝 Input News Text")
+            st.caption("Paste headline or full article text here.")
+            with st.form("predict_form", clear_on_submit=False):
+                user_text = st.text_area(
+                    "News Content",
+                    height=220,
+                    placeholder=(
+                        "Example: A new policy was announced today...\n\n"
+                        "Or paste any news article here for analysis."
+                    ),
+                    label_visibility="collapsed",
+                )
+                
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    submitted = st.form_submit_button("🔍 Analyze Text", use_container_width=True)
+                with col2:
+                    st.form_submit_button("Clear", use_container_width=True)
+        
+        if submitted:
+            if not user_text.strip():
+                st.warning("⚠️ Please enter some text to predict!")
+                return
+            
+            with st.spinner("🤔 Analyzing text..."):
+                nb, lr = load_models()
+                model = nb if algo.startswith("Naive") else lr
+                pred, confidence = predict_with_confidence(model, user_text)
+            
+            st.divider()
+            display_prediction_result(pred, confidence, user_text, algo, model)
+        
+        # Example predictions
+        with st.expander("📚 See Example Predictions"):
+            st.subheader("Sample Real News")
+            example_real = "President announces new environmental policy to reduce carbon emissions by 40% over next decade, backed by scientists."
+            if st.button("Analyze Example Real News"):
+                with st.spinner("Analyzing..."):
+                    nb, lr = load_models()
+                    model = lr  # Use LR
+                    pred, confidence = predict_with_confidence(model, example_real)
+                display_prediction_result(pred, confidence, example_real, "Logistic Regression (TF-IDF)", model)
+            
+            st.divider()
+            st.subheader("Sample Fake News")
+            example_fake = "SHOCKING: Scientists discover that healthy diet is actually deadly poison!!! Click now before they hide this!!"
+            if st.button("Analyze Example Fake News"):
+                with st.spinner("Analyzing..."):
+                    nb, lr = load_models()
+                    model = lr
+                    pred, confidence = predict_with_confidence(model, example_fake)
+                display_prediction_result(pred, confidence, example_fake, "Logistic Regression (TF-IDF)", model)
+    
+    # PAGE: Batch Processing
+    elif page == "📊 Batch Processing":
+        st.subheader("📊 Batch News Analysis")
+        st.caption("Upload a CSV file with a 'text' column to analyze multiple articles at once.")
+        
         algo = st.selectbox(
             "Algorithm",
             ["Naive Bayes (TF-IDF)", "Logistic Regression (TF-IDF)"],
             index=1,
+            key="batch_algo"
         )
-        st.caption(
-            "Tip: Logistic Regression usually gives higher accuracy on this dataset."
-        )
-
-    with left:
-        st.subheader("Input News Text")
-        st.caption("Paste headline or full article text.")
-        with st.form("predict_form", clear_on_submit=False):
-            user_text = st.text_area(
-                "News Content",
-                height=220,
-                placeholder=(
-                    "Paste news text here...\n\n"
-                    "Example: A new policy was announced today to improve..."
-                ),
-                label_visibility="collapsed",
-            )
-            submitted = st.form_submit_button("Predict")
-
-    # Friendly guidance if models are not trained yet.
-    if not (NB_MODEL_PATH.exists() and LR_MODEL_PATH.exists()):
-        st.info(
-            "Models are not found yet. Please train them first by running:\n\n"
-            "`python -m src.train_models --features tfidf`\n\n"
-            "Then come back and refresh this page."
-        )
-
-    if submitted:
-        if not user_text.strip():
-            st.warning("Please enter some text to predict.")
-            return
-
-        if not (NB_MODEL_PATH.exists() and LR_MODEL_PATH.exists()):
-            st.error(
-                "Model files are missing on the server. "
-                "Please train models locally and commit/push the `models/*.joblib` files, "
-                "or re-deploy after uploading them."
-            )
-            return
-
-        with st.spinner("Analyzing text..."):
+        
+        uploaded_file = st.file_uploader("Choose CSV file", type=["csv"])
+        
+        if uploaded_file:
             nb, lr = load_models()
             model = nb if algo.startswith("Naive") else lr
-            pred, confidence = predict_with_confidence(model, user_text)
-            cleaned = basic_clean_text(user_text)
-
+            
+            if st.button("📊 Process Batch", use_container_width=True):
+                with st.spinner("Processing..."):
+                    results_df = process_batch_csv(uploaded_file, algo, model)
+                
+                if results_df is not None:
+                    st.success(f"✓ Processed {len(results_df)} articles!")
+                    st.dataframe(results_df, width=1000, hide_index=True)
+                    
+                    # Download results
+                    csv = results_df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download Results (CSV)",
+                        data=csv,
+                        file_name="predictions_results.csv",
+                        mime="text/csv"
+                    )
+    
+    # PAGE: Model Info
+    elif page == "📈 Model Info":
+        st.subheader("📈 Model Information")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.info(
+                "**Models Used:**\n\n"
+                "• Naive Bayes (MultinomialNB)\n"
+                "• Logistic Regression\n\n"
+                "**Feature Extraction:**\n\n"
+                "• TF-IDF Vectorizer\n"
+                "• Unigrams & Bigrams\n"
+                "• Stop word removal"
+            )
+        
+        with col2:
+            st.info(
+                "**Training Details:**\n\n"
+                "• Dataset: Kaggle Fake News\n"
+                "• Train/Test Split: 80/20\n"
+                "• Classes: 0=Fake, 1=Real\n\n"
+                "**Advanced Features:**\n\n"
+                "• URL Detection\n"
+                "• Sentiment Analysis\n"
+                "• Punctuation Analysis"
+            )
+        
         st.divider()
-        st.subheader("Result")
-
-        result_text = label_to_text(pred)
-        if pred == 1:
-            st.success(f"Prediction: {result_text}")
+        
+        # Try to load and display metrics
+        metrics_path = ROOT_DIR / "reports" / "metrics_latest.csv"
+        if metrics_path.exists():
+            st.subheader("📊 Latest Model Metrics")
+            metrics_df = pd.read_csv(metrics_path)
+            st.dataframe(metrics_df, width=800, hide_index=True)
         else:
-            st.error(f"Prediction: {result_text}")
-
-        st.progress(min(max(confidence, 0.0), 1.0), text=f"Confidence: {confidence * 100:.1f}%")
-
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Algorithm", "Naive Bayes" if algo.startswith("Naive") else "Logistic Regression")
-        c2.metric("Features", "TF-IDF")
-        c3.metric("Confidence", f"{confidence * 100:.1f}%")
-
-        raw_words = len(user_text.split())
-        cleaned_words = len(cleaned.split())
-        st.caption(f"Words: raw={raw_words} | after cleaning={cleaned_words}")
-
-        with st.expander("Show cleaned text (for understanding)"):
-            st.code(cleaned if cleaned else "(empty after cleaning)", language="text")
+            st.info("No metrics file found. Train models to generate metrics.")
 
 
 if __name__ == "__main__":
     main()
+

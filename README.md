@@ -1,197 +1,273 @@
-# Fake News Detection (MCA Final Year Project)
+# Fake News Detection (MCA Final Year Project) - ENHANCED VERSION 2.0
 
 **Programming Language:** Python  
 **Algorithms:** Naive Bayes, Logistic Regression  
-**NLP Feature Extraction:** TF-IDF (Bag of Words can be added easily)  
-**Frontend:** Streamlit  
+**NLP Feature Extraction:** TF-IDF with Advanced Features  
+**Frontend:** Streamlit (Enhanced UI)  
 **Dataset:** Kaggle Fake News Dataset  
+**Special Features:** Feature Importance Visualization, Sentiment Analysis, Batch Processing, GridSearchCV Tuning
 
 > Educational purpose only: This project is created for learning and academic submission. The output should not be used for real-world decisions.
 
 ---
 
 ## 1) Project Title
-**Fake News Detection using Machine Learning and NLP (Naive Bayes & Logistic Regression)**
+**Fake News Detection using Machine Learning, NLP, and Advanced Feature Engineering**
 
 ## 2) Abstract
-Fake news spreads quickly on social media and creates misinformation. This project builds a simple Fake News Detection system using Machine Learning and Natural Language Processing (NLP). The text is cleaned and converted into numeric features using TF-IDF. Two supervised learning algorithms (Naive Bayes and Logistic Regression) are trained and compared. A Streamlit web app is created to allow users to paste news text and get a prediction as Fake or Real. This project is developed using free and open-source tools and is suitable for MCA final year submission.
+Fake news spreads quickly on social media and creates misinformation. This project builds a **comprehensive Fake News Detection system** using Machine Learning and Natural Language Processing (NLP). The text is preprocessed and converted into numeric features using TF-IDF along with advanced linguistic features (sentiment analysis, URL detection, punctuation patterns). Two supervised learning algorithms (Naive Bayes and Logistic Regression) are trained, compared, and evaluated with hyperparameter tuning (GridSearchCV). The system includes **feature importance visualization** to explain why a prediction was made, and a **Streamlit web app** with batch processing capability for testing multiple articles. This project is developed using free and open-source tools and is suitable for MCA final year submission.
 
-## 3) Problem Statement
-Manually identifying fake news is difficult because of large volume, fast sharing, and similar writing styles. We need an automated system that can classify a news article as **Fake** or **Real** using text analysis.
+## Key Improvements in Version 2.0:
 
-## 4) Objectives
-- Collect and use the Kaggle Fake News Dataset.
-- Clean and preprocess news text for ML.
-- Convert text into features using TF-IDF.
-- Train and evaluate Naive Bayes and Logistic Regression models.
-- Compare results and select the better model.
-- Build a Streamlit UI for easy testing.
+### ?? Advanced Backend Features
+- **Sentiment Analysis** (TextBlob): Polarity and Subjectivity scores
+- **URL Detection**: Count suspicious links (fake news indicator)
+- **Punctuation Analysis**: Excessive ! marks (fake news pattern)
+- **GridSearchCV**: Automated hyperparameter tuning for optimal models
+- **Feature Importance**: Shows top 15 words influencing each prediction
+- **Better Metrics**: Comprehensive comparison table with best model recommendation
 
-## 5) Literature Review (Short)
-- Early fake news detection used manual rule-based approaches (keyword patterns) but these methods do not generalize well.
-- Traditional ML models such as Naive Bayes and Logistic Regression work well for text classification with Bag-of-Words/TF-IDF features.
-- Recent research uses deep learning (LSTM, Transformers), but they require more compute and larger data. For MCA-level projects, classical ML models are accurate, explainable, and easy to implement.
+### ?? Enhanced UI Features  
+- **3 Modes**: Single Prediction, Batch Processing, Model Info Dashboard
+- **Word Highlighting**: Highlights important words in your input text
+- **Text Analytics**: Shows URLs, sentiment, punctuation counts
+- **Batch CSV Processing**: Analyze 100+ articles in seconds
+- **Example Predictions**: Built-in samples to test quickly
+- **Professional Dashboard**: Metrics, training details, algorithm info
 
-## 6) System Architecture (Textual)
-**Architecture Components:**
-1. **Dataset (Kaggle)** → news text + labels
-2. **Preprocessing** → cleaning (lowercase, remove URLs, remove symbols)
-3. **Feature Extraction (TF-IDF)** → converts text to numeric vectors
-4. **Model Training** → Naive Bayes, Logistic Regression
-5. **Evaluation** → accuracy, precision, recall, F1-score
-6. **Model Saving** → Joblib saved models
-7. **Streamlit App** → user enters text → model predicts Fake/Real
-
-**Explanation:**
-The system takes labeled news text from Kaggle. The text is cleaned and transformed into TF-IDF features. Two ML models are trained and tested. The models are saved and later loaded in the Streamlit application to provide real-time predictions.
-
-## 7) Data Preprocessing Steps
-1. Load CSV dataset from `data/raw/`.
-2. Combine title and text (if both are present).
-3. Convert to lowercase.
-4. Remove URLs and special characters.
-5. Remove extra spaces.
-6. Split dataset into train/test sets.
-
-Optional (for better accuracy on today's news):
-- Add your own latest labeled samples in `data/raw/custom_labeled.csv`
-- Columns must be: `text,label` where `label` is `0=fake` and `1=real`
-- Retrain the model again
-
-## 8) Algorithm Explanation
-### A) Naive Bayes (MultinomialNB)
-- Naive Bayes is a probabilistic classifier based on Bayes’ theorem.
-- It assumes features (words) are conditionally independent.
-- Works fast and performs well on text classification problems.
-
-### B) Logistic Regression
-- Logistic Regression is a linear classifier.
-- It learns weights for each feature to separate Fake vs Real classes.
-- Often performs strongly for TF-IDF text classification.
-
-## 9) Flowchart (Textual)
-START
-→ Load Kaggle Dataset
-→ Clean Text (lowercase, remove URLs, remove symbols)
-→ Convert Text to TF-IDF Features
-→ Split Train/Test
-→ Train Naive Bayes Model
-→ Train Logistic Regression Model
-→ Evaluate Both Models
-→ Save Best/All Models
-→ Streamlit UI loads models
-→ User inputs text
-→ Predict Fake/Real
-END
-
-## 10) How to Run (VS Code)
-### Step 1: Put dataset files
-Download Kaggle dataset and place the CSVs in:
-- `data/raw/`
-
-Supported formats:
-- `Fake.csv` and `True.csv` (Fake=0, Real=1)
-- OR `train.csv` (must contain `label` column)
-
-Optional (recommended for new/real-time news):
-- Create `data/raw/custom_labeled.csv` with columns `text,label`
-- Add latest real/fake examples (from trusted sources / fact-check websites)
-- Retrain so the model learns new topics and writing styles
-
-### Step 2: Install requirements
-```bash
-pip install -r requirements.txt
-```
-
-### Step 3: Train models
-```bash
-python -m src.train_models --features tfidf
-```
-This creates:
-- `models/naive_bayes_tfidf.joblib`
-- `models/logistic_regression_tfidf.joblib`
-
-Optional (Bag of Words):
-```bash
-python -m src.train_models --features bow
-```
-This creates:
-- `models/naive_bayes_bow.joblib`
-- `models/logistic_regression_bow.joblib`
-
-### Step 4: Run Streamlit app
-```bash
-streamlit run app.py
-```
-
-## 11) Output Screenshots (What to Capture)
-- Screenshot 1: Streamlit home page with input box.
-- Screenshot 2: Entered sample news text.
-- Screenshot 3: Prediction output (badge + confidence %) for Naive Bayes.
-- Screenshot 4: Prediction output (badge + confidence %) for Logistic Regression.
-- Screenshot 5: Training terminal output showing accuracy and confusion matrix.
-
-(Place screenshots inside `screenshots/` folder.)
-
-## 12) Result & Accuracy Comparison
-After training, you will get metrics in the terminal.
-Record them in your report.
-
-Final results (from latest training run):
-| Model | Accuracy | Precision | Recall | F1 |
-|------|----------|-----------|--------|----|
-| Naive Bayes (TF-IDF) | 0.9614 | 0.9605 | 0.9585 | 0.9595 |
-| Logistic Regression (TF-IDF) | 0.9918 | 0.9889 | 0.9939 | 0.9914 |
-
-## 13) Conclusion
-This project shows that classical ML algorithms can detect fake news effectively using TF-IDF features. Logistic Regression often provides higher accuracy, while Naive Bayes is faster and simpler. The Streamlit app makes the system easy to use.
-
-## 14) Future Scope
-- Use advanced NLP models like Word2Vec, FastText, or Transformers.
-- Add language detection and multi-language support.
-- Use more features (source credibility, author, publication date).
-- Deploy on cloud (free tier) for public access.
-
-## 15) Viva Voce Questions & Answers (10)
-1. **Q:** What is fake news detection?  
-   **A:** It is the task of classifying news as fake or real using computational methods.
-2. **Q:** Why is text preprocessing needed?  
-   **A:** To remove noise and make the text consistent for better ML performance.
-3. **Q:** What is TF-IDF?  
-   **A:** It measures how important a word is in a document compared to the whole dataset.
-4. **Q:** What is Bag of Words?  
-   **A:** A technique that represents text as word frequency counts.
-5. **Q:** Why Naive Bayes is called “naive”?  
-   **A:** Because it assumes all features are independent, which is rarely fully true.
-6. **Q:** Why Logistic Regression is used for classification?  
-   **A:** It outputs probabilities and can separate classes using a linear decision boundary.
-7. **Q:** What is overfitting?  
-   **A:** When a model performs well on training data but poorly on unseen test data.
-8. **Q:** What is a confusion matrix?  
-   **A:** A table that shows correct and incorrect predictions for each class.
-9. **Q:** What is precision and recall?  
-   **A:** Precision measures correctness of positive predictions; recall measures coverage of actual positives.
-10. **Q:** How do you deploy this project?  
-   **A:** Train and save the model, then run the Streamlit app locally or on a hosting platform.
+### ?? Better Model Comparison
+- Side-by-side accuracy, precision, recall, F1-score
+- Best model recommendation
+- Saved metrics CSV for your report
+- Confusion matrices and classification reports
 
 ---
 
-## GitHub Folder Structure
-```
+## Quick Start (5 minutes)
+
+### 1. Install Requirements
+`ash
+pip install -r requirements.txt
+`
+
+### 2. Train Models (with Tuning)
+`ash
+python -m src.train_models --features tfidf --tune --cv 5
+`
+
+### 3. Run Streamlit App
+`ash
+streamlit run app.py
+`
+
+That's it! ??
+
+---
+
+## File Structure
+`
 fake-news/
-  app.py
-  requirements.txt
-  README.md
-  .gitignore
-  data/
-    raw/
-    processed/
-  models/
-  src/
-    __init__.py
-    data_loader.py
-    text_preprocess.py
-    train_models.py
-  reports/
-  screenshots/
-```
+  +-- app.py (UPDATED - Enhanced UI)
+  +-- requirements.txt (UPDATED - New packages)
+  +-- README.md (THIS FILE - Comprehensive guide)
+  +-- data/raw/ (Your CSV files)
+  +-- models/ (Trained models)
+  +-- src/
+  �   +-- text_preprocess.py (UPDATED - New features)
+  �   +-- train_models.py (UPDATED - Better GridSearchCV)
+  �   +-- feature_importance.py (NEW - Visualization)
+  �   +-- data_loader.py
+  +-- reports/ (metrics_latest.csv)
+`
+
+---
+
+## Detailed Sections
+
+### NEW Advanced Features
+
+#### 1. Sentiment Analysis
+- **What**: Analyzes if text is positive/negative/neutral
+- **Why**: Fake news uses extreme emotions
+- **How**: TextBlob polarity (-1 to +1) and subjectivity (0 to 1)
+- **Insight**: Highly subjective + extreme sentiment = likely fake
+
+#### 2. URL Detection  
+- **What**: Counts number of suspicious links
+- **Why**: Fake news contains more malicious links
+- **How**: Regex pattern matching http:// and www.
+- **Insight**: High URL count + short article = suspicious
+
+#### 3. Punctuation Analysis
+- **What**: Counts excessive !, ? marks
+- **Why**: Fake news uses sensationalism
+- **How**: Count special punctuation characters
+- **Insight**: Excessive ! marks = emotional manipulation signal
+
+#### 4. GridSearchCV Hyperparameter Tuning
+- **What**: Automatically finds best model parameters
+- **Why**: Better accuracy than default parameters
+- **Parameters Tested**:
+  - Naive Bayes: alpha [0.5, 1.0, 2.0]
+  - Logistic Regression: C [0.5, 1.0, 2.0, 4.0]
+- **How**: Cross-validation (CV=5) for robust evaluation
+
+#### 5. Feature Importance Visualization
+- **What**: Shows top 15 words influencing the prediction
+- **For Logistic Regression**: Coefficient magnitude
+  - High positive = REAL news indicator
+  - High negative = FAKE news indicator
+- **For Naive Bayes**: Log probability differences
+- **UI Display**: Table + highlighted words in input text
+
+### Enhanced Streamlit UI
+
+#### Mode 1: ?? Single Prediction
+- Paste news text
+- Choose algorithm (Naive Bayes or Logistic Regression)
+- See:
+  - Prediction (Fake/Real)
+  - Confidence percentage
+  - Text analytics (URLs, sentiment, punctuation)
+  - **Feature importance (Top 15 words)**
+  - **Highlighted important words in your text**
+  - Cleaned text view
+
+#### Mode 2: ?? Batch Processing
+- Upload CSV with 'text' column
+- Instantly process 100+ articles
+- Get results table with predictions & confidence
+- Download as CSV
+
+#### Mode 3: ?? Model Info
+- Show training metrics
+- Model comparison table
+- Algorithm & feature details
+
+---
+
+## Training with Improvements
+
+### Command
+`ash
+# Basic training
+python -m src.train_models --features tfidf
+
+# WITH HYPERPARAMETER TUNING (Recommended)
+python -m src.train_models --features tfidf --tune --cv 5
+
+# Advanced
+python -m src.train_models --features tfidf --tune --cv 5 --ngram-max 2 --max-features 50000
+`
+
+### Output
+- ? Model comparison table
+- ? Best model recommendation  
+- ? Saved models (.joblib)
+- ? Metrics CSV for reports
+- ? Confusion matrices
+- ? Classification reports
+
+Example:
+`
+======================================================================
+?? MODEL COMPARISON RESULTS
+======================================================================
+                                Model    Accuracy  Precision  Recall  F1
+Naive Bayes (TF-IDF)                    0.9614    0.9605     0.9585  0.9595
+Logistic Regression (TF-IDF)            0.9918    0.9889     0.9939  0.9914
+
+? BEST MODEL: Logistic Regression (TF-IDF)
+  Accuracy: 0.9918
+`
+
+---
+
+## Viva Voce Preparation (15 Key Questions)
+
+### Machine Learning Basics
+1. **Q: What is fake news detection?**
+   - A: Classifying news as fake/real using ML and providing explainability.
+
+2. **Q: How does Naive Bayes work?**
+   - A: Probabilistic classifier using Bayes' theorem. Assumes feature independence.
+
+3. **Q: How does Logistic Regression work?**
+   - A: Linear classifier using sigmoid function for probability outputs.
+
+4. **Q: Why use both NB and LR?**
+   - A: Compare performance, understand trade-offs, demonstrate model selection methodology.
+
+### Text Processing & Features
+5. **Q: Why is text preprocessing needed?**
+   - A: Remove noise, normalize text, extract meaningful features for better performance.
+
+6. **Q: What is TF-IDF and why use it?**
+   - A: Measures term importance (frequency � uniqueness). Captures both dimensions of word significance.
+
+7. **Q: What are the NEW preprocessing features?**
+   - A: Sentiment analysis (TextBlob), URL detection, punctuation analysis.
+
+8. **Q: Why add sentiment analysis?**
+   - A: Fake news uses extreme emotions. High sentiment is a red flag.
+
+### Model Improvements
+9. **Q: What is GridSearchCV?**
+   - A: Automatically tests parameter combinations via cross-validation to find best model.
+
+10. **Q: What is feature importance?**
+    - A: Shows which input features (words) most strongly influence predictions.
+
+11. **Q: How to extract feature importance?**
+    - A: For LR: magnitude of coefficients. For NB: log probability differences.
+
+### Evaluation & Explainability  
+12. **Q: Difference between precision and recall?**
+    - A: Precision="of predicted positives, how many correct?" Recall="of actual positives, how many found?"
+
+13. **Q: How does the system explain predictions?**
+    - A: Shows top 15 important words, highlights them in text, displays metrics.
+
+### Project Specific
+14. **Q: What makes this suitable for MCA final year?**
+    - A: Demonstrates ML fundamentals, NLP, feature engineering, UI development, and explainability.
+
+15. **Q: What improvements were made in v2.0?**
+    - A: Sentiment analysis, URL detection, GridSearchCV tuning, feature importance visualization, batch processing.
+
+---
+
+## Installation & Dependencies
+
+### New Packages in v2.0
+- 	extblob - Sentiment analysis
+- matplotlib - Visualization
+- plotly - Interactive charts
+- openpyxl - Excel support
+
+### Install All
+`ash
+pip install -r requirements.txt
+`
+
+---
+
+## References
+- Kaggle Dataset: https://www.kaggle.com/datasets/clmentbisaillon/fake-and-real-news-dataset
+- Scikit-learn: https://scikit-learn.org/stable/
+- Streamlit Docs: https://docs.streamlit.io/
+- TextBlob Docs: https://textblob.readthedocs.io/
+- Pandas Docs: https://pandas.pydata.org/docs/
+
+---
+
+## Tips for Presentation
+1. **Show feature importance**: Very impressive to examiners
+2. **Demonstrate batch processing**: Shows understanding of scalability
+3. **Explain why sentiment matters**: Show examples of extreme sentiment in fake news
+4. **Talk about GridSearchCV**: Shows knowledge of hyperparameter tuning
+5. **Highlight explainability**: Modern AI concept that impresses
+
+---
+
+**Version 2.0 Enhanced | March 2026 | MCA Final Year Project**

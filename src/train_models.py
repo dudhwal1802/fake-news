@@ -131,19 +131,39 @@ def tune_model(
     y_train,
     cv: int,
 ) -> Pipeline:
-    """Optional tuning using GridSearchCV (kept simple for MCA)."""
+    """Hyperparameter tuning using GridSearchCV.
+    
+    GridSearchCV finds the best parameters by testing different combinations.
+    This trains multiple models to find the optimal settings.
+    
+    Args:
+        name: Name of the model being tuned
+        pipeline: ML pipeline to tune
+        param_grid: Dictionary of hyperparameters to test
+        X_train: Training data
+        y_train: Training labels
+        cv: Number of cross-validation folds
+    
+    Returns:
+        Best trained pipeline from grid search
+    """
     print("\n" + "-" * 70)
-    print(f"Tuning: {name} (cv={cv})")
+    print(f"Tuning: {name}")
+    print(f"Testing combinations: {len(param_grid.get(list(param_grid.keys())[0], []))} parameters")
+    
     search = GridSearchCV(
         estimator=pipeline,
         param_grid=param_grid,
         scoring="f1",
         cv=cv,
         n_jobs=-1,
-        verbose=0,
+        verbose=1,
     )
     search.fit(X_train, y_train)
-    print("Best params:", search.best_params_)
+    
+    print(f"✓ Best parameters found: {search.best_params_}")
+    print(f"  Best CV F1 score: {search.best_score_:.4f}")
+    
     return search.best_estimator_
 
 
@@ -269,9 +289,29 @@ def main() -> None:
     print(f"- models/naive_bayes_{suffix}.joblib")
     print(f"- models/logistic_regression_{suffix}.joblib")
 
-    print("\nAccuracy Comparison:")
-    print(f"- Naive Bayes        : {nb_result.accuracy:.4f}")
-    print(f"- Logistic Regression: {lr_result.accuracy:.4f}")
+    print("\n" + "=" * 70)
+    print("📊 MODEL COMPARISON RESULTS")
+    print("=" * 70)
+    
+    # Create comparison table
+    comparison_data = {
+        "Model": [nb_result.name, lr_result.name],
+        "Accuracy": [f"{nb_result.accuracy:.4f}", f"{lr_result.accuracy:.4f}"],
+        "Precision": [f"{nb_result.precision:.4f}", f"{lr_result.precision:.4f}"],
+        "Recall": [f"{nb_result.recall:.4f}", f"{lr_result.recall:.4f}"],
+        "F1-Score": [f"{nb_result.f1:.4f}", f"{lr_result.f1:.4f}"],
+    }
+    
+    comparison_df = pd.DataFrame(comparison_data)
+    print("\n" + comparison_df.to_string(index=False))
+    
+    # Find best model
+    best_model = nb_result if nb_result.accuracy >= lr_result.accuracy else lr_result
+    print("\n✓ BEST MODEL: " + best_model.name)
+    print(f"  Accuracy: {best_model.accuracy:.4f}")
+    
+    print("\n" + "=" * 70)
+    print("Metrics saved: reports/metrics_latest.csv")
 
 
 if __name__ == "__main__":

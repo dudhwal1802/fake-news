@@ -4,8 +4,14 @@ scikit-learn
 nltk
 joblib
 
-# Streamlit Cloud fix:
-# Older Streamlit builds can crash on Python 3.13 due to Altair dependency mismatch.
-# Pin Streamlit + Altair to known-compatible versions.
+# Sentiment analysis
+textblob
+
+# Streamlit and visualization
 streamlit==1.52.2
 altair==6.0.0
+matplotlib
+plotly
+
+# Data handling
+openpyxl
