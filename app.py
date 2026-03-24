@@ -102,10 +102,10 @@ def display_prediction_result(pred: int, confidence: float, user_text: str, mode
     with col1:
         result_text = label_to_text(pred)
         if pred == 1:
-            st.success(f"✓ **Prediction: {result_text}**", icon="✓")
+            st.success(f"✓ **Prediction: {result_text}**")
             st.markdown(f"**Confidence: {confidence * 100:.1f}%**", help="How sure the model is about this prediction")
         else:
-            st.error(f"⚠ **Prediction: {result_text}**", icon="⚠")
+            st.error(f"⚠ **Prediction: {result_text}**")
             st.markdown(f"**Confidence: {confidence * 100:.1f}%**", help="How sure the model is about this prediction")
         
         # Confidence bar
