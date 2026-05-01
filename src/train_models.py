@@ -83,9 +83,13 @@ def build_lr_pipeline(feature_type: str, ngram_max: int, min_df: int, max_featur
             (
                 "clf",
                 LogisticRegression(
-                    max_iter=2000,
-                    solver="liblinear",
+                    max_iter=5000,
+                    solver="saga",
                     class_weight="balanced",
+                    random_state=42,
+                    C=1.0,
+                    penalty="l2",
+                    n_jobs=-1,
                 ),
             ),
         ]
@@ -241,7 +245,7 @@ def main() -> None:
         lr = tune_model(
             "Logistic Regression",
             lr,
-            param_grid={"clf__C": [0.5, 1.0, 2.0, 4.0]},
+            param_grid={"clf__C": [0.01, 0.05, 0.1, 0.5, 1.0]},
             X_train=X_train,
             y_train=y_train,
             cv=args.cv,

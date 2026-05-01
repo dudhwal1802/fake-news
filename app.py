@@ -37,6 +37,10 @@ MODELS_DIR = ROOT_DIR / "models"
 NB_MODEL_PATH = MODELS_DIR / "naive_bayes_tfidf.joblib"
 LR_MODEL_PATH = MODELS_DIR / "logistic_regression_tfidf.joblib"
 
+# Initialize session state
+if "clear_text" not in st.session_state:
+    st.session_state.clear_text = False
+
 
 @st.cache_resource
 def load_models():
@@ -132,20 +136,22 @@ def display_prediction_result(pred: int, confidence: float, user_text: str, mode
     try:
         top_words, top_scores, interpretation = get_top_features(model, model_name, n_features=15)
         
-        if top_words:
+        if top_words and len(top_words) > 0:
             feature_df = pd.DataFrame({
                 "Word": top_words,
                 "Importance Score": [f"{abs(s):.4f}" for s in top_scores],
-                "Indicates": [interpretation.get(w, "") for w in top_words]
+                "Indicates": [interpretation.get(w, "Unknown") for w in top_words]
             })
             st.dataframe(feature_df, width=800, hide_index=True)
             
             # Highlight suspicious words in user text
             suspicious = extract_suspicious_words_from_text(user_text, top_words)
-            if suspicious:
-                st.info(f"**Important words found in your text:** {', '.join(set(suspicious))}")
+            if suspicious and len(suspicious) > 0:
+                st.info(f"**Important words found in your text:** {', '.join(sorted(set(suspicious)))}")
+        else:
+            st.info("Could not extract feature importance from this model.")
     except Exception as e:
-        st.warning(f"Could not extract feature importance: {e}")
+        st.warning(f"⚠️ Could not extract feature importance: {str(e)[:100]}")
     
     # Cleaned text
     cleaned = basic_clean_text(user_text)
@@ -167,32 +173,44 @@ def process_batch_csv(uploaded_file, model_name: str, model) -> pd.DataFrame:
             st.error("❌ CSV must have a 'text' column!")
             return None
         
+        if len(df) == 0:
+            st.error("❌ CSV file is empty!")
+            return None
+        
         results = []
         progress_bar = st.progress(0)
         
         for idx, row in df.iterrows():
-            text = str(row['text'])
-            if len(text.strip()) == 0:
+            try:
+                text = str(row['text']).strip() if pd.notna(row['text']) else ""
+                
+                if len(text) == 0:
+                    results.append({
+                        'text': 'Empty',
+                        'prediction': 'SKIPPED',
+                        'confidence': 'N/A'
+                    })
+                else:
+                    pred, conf = predict_with_confidence(model, text)
+                    results.append({
+                        'text': text[:100],
+                        'prediction': label_to_text(pred),
+                        'confidence': f"{conf * 100:.1f}%"
+                    })
+            except Exception as e:
                 results.append({
-                    'text': text[:100],
-                    'prediction': 'N/A',
-                    'confidence': 'N/A'
-                })
-            else:
-                pred, conf = predict_with_confidence(model, text)
-                results.append({
-                    'text': text[:100],
-                    'prediction': label_to_text(pred),
-                    'confidence': f"{conf * 100:.1f}%"
+                    'text': 'ERROR',
+                    'prediction': 'FAILED',
+                    'confidence': str(e)[:50]
                 })
             
-            progress_bar.progress((idx + 1) / len(df))
+            progress_bar.progress(min((idx + 1) / len(df), 1.0))
         
         results_df = pd.DataFrame(results)
         return results_df
     
     except Exception as e:
-        st.error(f"❌ Error processing CSV: {e}")
+        st.error(f"❌ Error processing CSV: {str(e)[:200]}")
         return None
 
 
@@ -228,21 +246,26 @@ def main() -> None:
         
         with right:
             st.subheader("⚙️ Settings")
-            algo = st.selectbox(
+            algo = st.radio(
                 "Algorithm",
                 ["Naive Bayes (TF-IDF)", "Logistic Regression (TF-IDF)"],
                 index=1,
             )
             st.caption(
-                "💡 **Tip:** Logistic Regression usually gives higher accuracy."
+                "💡 **Tip:** Naive Bayes is more reliable for diverse content."
             )
         
         with left:
             st.subheader("📝 Input News Text")
             st.caption("Paste headline or full article text here.")
-            with st.form("predict_form", clear_on_submit=False):
+            
+            # Use columns for better layout
+            col_input, col_btn = st.columns([4, 1])
+            
+            with col_input:
                 user_text = st.text_area(
                     "News Content",
+                    value="" if st.session_state.clear_text else None,
                     height=220,
                     placeholder=(
                         "Example: A new policy was announced today...\n\n"
@@ -250,15 +273,23 @@ def main() -> None:
                     ),
                     label_visibility="collapsed",
                 )
-                
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    submitted = st.form_submit_button("🔍 Analyze Text", use_container_width=True)
-                with col2:
-                    st.form_submit_button("Clear", use_container_width=True)
+            
+            col1, col2, col3 = st.columns([2, 1, 1])
+            with col1:
+                submitted = st.button("🔍 Analyze Text", use_container_width=True, key="analyze_btn")
+            with col2:
+                if st.button("🗑️ Clear", use_container_width=True, key="clear_btn"):
+                    st.session_state.clear_text = True
+                    st.rerun()
+            with col3:
+                st.empty()
+            
+            # Reset clear flag after rerun
+            if st.session_state.clear_text:
+                st.session_state.clear_text = False
         
         if submitted:
-            if not user_text.strip():
+            if not user_text or not user_text.strip():
                 st.warning("⚠️ Please enter some text to predict!")
                 return
             
@@ -274,32 +305,32 @@ def main() -> None:
         with st.expander("📚 See Example Predictions"):
             st.subheader("Sample Real News")
             example_real = "President announces new environmental policy to reduce carbon emissions by 40% over next decade, backed by scientists."
-            if st.button("Analyze Example Real News"):
+            if st.button("Analyze Example Real News", key="ex_real"):
                 with st.spinner("Analyzing..."):
                     nb, lr = load_models()
-                    model = lr  # Use LR
+                    model = nb if algo.startswith("Naive") else lr
                     pred, confidence = predict_with_confidence(model, example_real)
-                display_prediction_result(pred, confidence, example_real, "Logistic Regression (TF-IDF)", model)
+                display_prediction_result(pred, confidence, example_real, algo, model)
             
             st.divider()
             st.subheader("Sample Fake News")
             example_fake = "SHOCKING: Scientists discover that healthy diet is actually deadly poison!!! Click now before they hide this!!"
-            if st.button("Analyze Example Fake News"):
+            if st.button("Analyze Example Fake News", key="ex_fake"):
                 with st.spinner("Analyzing..."):
                     nb, lr = load_models()
-                    model = lr
+                    model = nb if algo.startswith("Naive") else lr
                     pred, confidence = predict_with_confidence(model, example_fake)
-                display_prediction_result(pred, confidence, example_fake, "Logistic Regression (TF-IDF)", model)
+                display_prediction_result(pred, confidence, example_fake, algo, model)
     
     # PAGE: Batch Processing
     elif page == "📊 Batch Processing":
         st.subheader("📊 Batch News Analysis")
         st.caption("Upload a CSV file with a 'text' column to analyze multiple articles at once.")
         
-        algo = st.selectbox(
+        algo = st.radio(
             "Algorithm",
             ["Naive Bayes (TF-IDF)", "Logistic Regression (TF-IDF)"],
-            index=1,
+            index=0,
             key="batch_algo"
         )
         

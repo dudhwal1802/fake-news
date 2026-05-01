@@ -94,11 +94,20 @@ def get_top_features(
     
     Returns:
         Tuple of (feature_names, importance_scores, interpretation_dict)
+    
+    Raises:
+        ValueError: If pipeline structure is invalid
     """
+    if pipeline is None:
+        raise ValueError("Pipeline is None")
+    
     if "Naive Bayes" in model_name or "naive" in model_name.lower():
         features, scores = get_top_features_naive_bayes(pipeline, n_features)
     else:
         features, scores = get_top_features_logistic_regression(pipeline, n_features)
+    
+    if not features or len(features) == 0:
+        return [], [], {}
     
     # Create interpretation for each feature
     interpretation = {}
