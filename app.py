@@ -143,32 +143,30 @@ def get_risk_level(confidence: float, exclamation_count: int, url_count: int) ->
 
 def create_confidence_gauge(confidence: float, label: str) -> go.Figure:
     """Create a gauge chart for confidence visualization"""
+    confidence_pct = confidence * 100
     fig = go.Figure(go.Indicator(
-        mode="gauge+number+delta",
-        value=confidence * 100,
+        mode="gauge+number",
+        value=confidence_pct,
         title={"text": label},
         domain={"x": [0, 1], "y": [0, 1]},
+        number={"suffix": "%", "font": {"size": 40, "color": "#00ff88"}},
         gauge={
-            "axis": {"range": [0, 100]},
-            "bar": {"color": "#00ff88"},
+            "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "white"},
+            "bar": {"color": "#00ff88", "thickness": 0.7},
+            "bgcolor": "rgba(255, 255, 255, 0.05)",
             "steps": [
-                {"range": [0, 30], "color": "rgba(255, 0, 0, 0.3)"},
-                {"range": [30, 60], "color": "rgba(255, 165, 0, 0.3)"},
-                {"range": [60, 100], "color": "rgba(0, 255, 0, 0.3)"}
-            ],
-            "threshold": {
-                "line": {"color": "red", "width": 4},
-                "thickness": 0.75,
-                "value": 75
-            }
+                {"range": [0, 30], "color": "rgba(255, 0, 0, 0.2)"},
+                {"range": [30, 60], "color": "rgba(255, 165, 0, 0.2)"},
+                {"range": [60, 100], "color": "rgba(0, 255, 0, 0.2)"}
+            ]
         }
     ))
     fig.update_layout(
-        height=300,
-        margin=dict(l=10, r=10, t=40, b=10),
+        height=350,
+        margin=dict(l=20, r=20, t=60, b=20),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(color="white")
+        font=dict(color="white", size=14)
     )
     return fig
 
@@ -328,9 +326,27 @@ def display_prediction_result(pred: int, confidence: float, user_text: str, mode
         top_words, top_scores, interpretation = get_top_features(model, model_name, n_features=20)
         
         if top_words and len(top_words) > 0:
-            # Create feature chart
-            fig_features = create_features_chart(top_words, top_scores)
-            st.plotly_chart(fig_features, use_container_width=True)
+            # Filter to only show words that appear in the article
+            cleaned_text = basic_clean_text(user_text).lower()
+            article_words = set(cleaned_text.split())
+            
+            # Filter top words to only those in the article
+            filtered_words = []
+            filtered_scores = []
+            for word, score in zip(top_words, top_scores):
+                if word.lower() in article_words:
+                    filtered_words.append(word)
+                    filtered_scores.append(score)
+                if len(filtered_words) >= 10:
+                    break
+            
+            # Create feature chart with filtered data
+            if filtered_words and len(filtered_words) > 0:
+                fig_features = create_features_chart(filtered_words, filtered_scores)
+                st.plotly_chart(fig_features, use_container_width=True)
+            else:
+                fig_features = create_features_chart(top_words[:10], top_scores[:10])
+                st.plotly_chart(fig_features, use_container_width=True)
             
             # Suspicious words detection
             suspicious = extract_suspicious_words_from_text(user_text, top_words)
@@ -338,12 +354,14 @@ def display_prediction_result(pred: int, confidence: float, user_text: str, mode
                 unique_suspicious = sorted(set(suspicious))
                 st.success(f"🚨 **Suspicious Keywords Found:** {', '.join(unique_suspicious)}")
             
-            # Feature table
-            st.markdown("**Top Features Breakdown:**")
+            # Feature table with filtered words
+            display_words = filtered_words if filtered_words else top_words[:15]
+            display_scores = filtered_scores if filtered_words else top_scores[:15]
+            st.markdown("**Top Features Breakdown (Words from Article):**")
             feature_df = pd.DataFrame({
-                "Word": top_words[:15],
-                "Importance": [f"{abs(s):.4f}" for s in top_scores[:15]],
-                "Indicates": [interpretation.get(w, "Unknown") for w in top_words[:15]]
+                "Word": display_words[:15],
+                "Importance": [f"{abs(s):.4f}" for s in display_scores[:15]],
+                "Indicates": [interpretation.get(w, "Unknown") for w in display_words[:15]]
             })
             st.dataframe(feature_df, use_container_width=True, hide_index=True)
         else:
@@ -509,12 +527,15 @@ def main() -> None:
             st.subheader("📝 Input News Content")
             st.caption("Paste any news headline or full article text")
             
+            if "text_input_key" not in st.session_state:
+                st.session_state.text_input_key = 0
+            
             user_text = st.text_area(
                 "Enter your news text:",
-                value="" if st.session_state.clear_text else None,
                 height=280,
                 placeholder="Example: A new policy was announced today...\n\nOR paste any news article here for AI analysis.",
                 label_visibility="collapsed",
+                key=f"user_text_{st.session_state.text_input_key}"
             )
             
             col1, col2, col3 = st.columns([1.5, 1, 0.5])
@@ -522,11 +543,8 @@ def main() -> None:
                 submitted = st.button("🔍 Analyze Now", use_container_width=True, key="analyze_btn", help="Analyze the text with selected model")
             with col2:
                 if st.button("🗑️ Clear", use_container_width=True, key="clear_btn", help="Clear the input text"):
-                    st.session_state.clear_text = True
+                    st.session_state.text_input_key += 1
                     st.rerun()
-            
-            if st.session_state.clear_text:
-                st.session_state.clear_text = False
             
             st.markdown('</div>', unsafe_allow_html=True)
         
