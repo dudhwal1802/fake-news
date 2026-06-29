@@ -71,7 +71,8 @@ def build_nb_pipeline(feature_type: str, ngram_max: int, min_df: int, max_featur
     return Pipeline(
         steps=[
             ("vectorizer", build_vectorizer(feature_type, ngram_max, min_df, max_features)),
-            ("clf", MultinomialNB(alpha=1.0)),
+            # Slightly smaller alpha keeps NB less over-smoothed on real-news terms.
+            ("clf", MultinomialNB(alpha=0.1)),
         ]
     )
 
@@ -88,8 +89,6 @@ def build_lr_pipeline(feature_type: str, ngram_max: int, min_df: int, max_featur
                     class_weight="balanced",
                     random_state=42,
                     C=1.0,
-                    penalty="l2",
-                    n_jobs=-1,
                 ),
             ),
         ]
@@ -237,7 +236,7 @@ def main() -> None:
         nb = tune_model(
             "Naive Bayes",
             nb,
-            param_grid={"clf__alpha": [0.5, 1.0, 2.0]},
+            param_grid={"clf__alpha": [0.1, 0.2, 0.3, 0.5, 1.0]},
             X_train=X_train,
             y_train=y_train,
             cv=args.cv,

@@ -34,13 +34,18 @@ from src.feature_importance import get_top_features, extract_suspicious_words_fr
 st.set_page_config(
     page_title="🔍 Advanced Fake News Detection System",
     layout="wide",
-    initial_sidebar_state="expanded",
+    # Keep the sidebar collapsed by default so the main prediction controls stay unobstructed.
+    initial_sidebar_state="collapsed",
 )
 
 ROOT_DIR = Path(__file__).resolve().parent
 MODELS_DIR = ROOT_DIR / "models"
 NB_MODEL_PATH = MODELS_DIR / "naive_bayes_tfidf.joblib"
 LR_MODEL_PATH = MODELS_DIR / "logistic_regression_tfidf.joblib"
+MODEL_REAL_CLASS_THRESHOLDS = {
+    "MultinomialNB": 0.30,
+    "LogisticRegression": 0.36,
+}
 
 # Initialize session state
 if "clear_text" not in st.session_state:
@@ -56,6 +61,36 @@ def load_models():
     nb = joblib.load(NB_MODEL_PATH)
     lr = joblib.load(LR_MODEL_PATH)
     return nb, lr
+
+
+@st.cache_data
+def load_model_metrics() -> dict[str, dict[str, float | str]]:
+    metrics_path = ROOT_DIR / "reports" / "metrics_latest.csv"
+    if not metrics_path.exists():
+        return {}
+
+    metrics_df = pd.read_csv(metrics_path)
+    metrics: dict[str, dict[str, float | str]] = {}
+    for row in metrics_df.to_dict("records"):
+        model_name = str(row.get("model", "")).strip()
+        if model_name:
+            metrics[model_name] = row
+    return metrics
+
+
+def format_percentage(value: float | int | str | None) -> str:
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError):
+        return "N/A"
+    return f"{numeric_value:.2%}" if numeric_value <= 1 else f"{numeric_value:.2f}%"
+
+
+def get_model_accuracy(metrics: dict[str, dict[str, float | str]], model_name: str) -> str:
+    row = metrics.get(model_name)
+    if not row:
+        return "N/A"
+    return format_percentage(row.get("accuracy"))
 
 
 # ============ ADVANCED UI STYLING ============
@@ -214,8 +249,8 @@ def create_analysis_metrics(text: str) -> dict:
 
 
 def predict_label(model, text: str) -> int:
-    cleaned = basic_clean_text(text)
-    return int(model.predict([cleaned])[0])
+    pred, _ = predict_with_confidence(model, text)
+    return pred
 
 
 def predict_with_confidence(model, text: str) -> tuple[int, float]:
@@ -225,7 +260,6 @@ def predict_with_confidence(model, text: str) -> tuple[int, float]:
     Works for MultinomialNB and LogisticRegression pipelines.
     """
     cleaned = basic_clean_text(text)
-    pred = int(model.predict([cleaned])[0])
 
     confidence = 0.0
     if hasattr(model, "predict_proba"):
@@ -233,12 +267,25 @@ def predict_with_confidence(model, text: str) -> tuple[int, float]:
         # proba is aligned with model.classes_. For our binary case, we map by class id.
         if hasattr(model, "classes_"):
             class_to_index = {int(c): i for i, c in enumerate(model.classes_)}
-            idx = class_to_index.get(pred)
-            if idx is not None:
-                confidence = float(proba[idx])
+            clf = model.named_steps.get("clf") if hasattr(model, "named_steps") else None
+
+            if clf is not None and clf.__class__.__name__ in MODEL_REAL_CLASS_THRESHOLDS and 1 in class_to_index:
+                real_idx = class_to_index[1]
+                real_probability = float(proba[real_idx])
+                threshold = MODEL_REAL_CLASS_THRESHOLDS[clf.__class__.__name__]
+                pred = 1 if real_probability >= threshold else 0
+                confidence = real_probability if pred == 1 else float(proba[class_to_index.get(0, real_idx)])
+            else:
+                pred = int(model.predict([cleaned])[0])
+                idx = class_to_index.get(pred)
+                if idx is not None:
+                    confidence = float(proba[idx])
         else:
+            pred = int(model.predict([cleaned])[0])
             # Fallback: take max probability
             confidence = float(max(proba))
+    else:
+        pred = int(model.predict([cleaned])[0])
 
     return pred, confidence
 
@@ -306,7 +353,7 @@ def display_prediction_result(pred: int, confidence: float, user_text: str, mode
     col1, col2 = st.columns([1.5, 1])
     with col1:
         fig_gauge = create_confidence_gauge(confidence, "Model Confidence")
-        st.plotly_chart(fig_gauge, use_container_width=True)
+        st.plotly_chart(fig_gauge, width="stretch")
     
     with col2:
         st.markdown('<div class="advanced-card">', unsafe_allow_html=True)
@@ -343,10 +390,10 @@ def display_prediction_result(pred: int, confidence: float, user_text: str, mode
             # Create feature chart with filtered data
             if filtered_words and len(filtered_words) > 0:
                 fig_features = create_features_chart(filtered_words, filtered_scores)
-                st.plotly_chart(fig_features, use_container_width=True)
+                st.plotly_chart(fig_features, width="stretch")
             else:
                 fig_features = create_features_chart(top_words[:10], top_scores[:10])
-                st.plotly_chart(fig_features, use_container_width=True)
+                st.plotly_chart(fig_features, width="stretch")
             
             # Suspicious words detection
             suspicious = extract_suspicious_words_from_text(user_text, top_words)
@@ -363,7 +410,7 @@ def display_prediction_result(pred: int, confidence: float, user_text: str, mode
                 "Importance": [f"{abs(s):.4f}" for s in display_scores[:15]],
                 "Indicates": [interpretation.get(w, "Unknown") for w in display_words[:15]]
             })
-            st.dataframe(feature_df, use_container_width=True, hide_index=True)
+            st.dataframe(feature_df, width="stretch", hide_index=True)
         else:
             st.info("Could not extract feature importance from this model.")
     except Exception as e:
@@ -451,6 +498,16 @@ def main() -> None:
         st.session_state.clear_text = False
     if "prediction_history" not in st.session_state:
         st.session_state.prediction_history = []
+
+    model_metrics = load_model_metrics()
+    best_model_name = None
+    best_model_accuracy = "N/A"
+    if model_metrics:
+        best_model_name = max(
+            model_metrics,
+            key=lambda name: float(model_metrics[name].get("accuracy", 0) or 0),
+        )
+        best_model_accuracy = get_model_accuracy(model_metrics, best_model_name)
     
     # Advanced sidebar with metrics
     with st.sidebar:
@@ -462,24 +519,17 @@ def main() -> None:
             ["🏠 Single Prediction", "📊 Batch Processing", "📈 Model Analytics", "📜 History"],
             index=0
         )
-        
-        st.markdown("---")
-        st.markdown("### 📊 **Session Stats**")
-        if st.session_state.prediction_history:
-            st.write(f"**Total Predictions:** {len(st.session_state.prediction_history)}")
-            real_count = sum(1 for p in st.session_state.prediction_history if "Real" in p['prediction'])
-            fake_count = len(st.session_state.prediction_history) - real_count
-            st.write(f"🟢 Real: {real_count} | 🔴 Fake: {fake_count}")
-        else:
-            st.write("No predictions yet.")
     
     # Advanced header
-    st.markdown("""
+    st.markdown(
+        f"""
     <div style='text-align: center; margin: 30px 0;'>
     <h1>🔍 Advanced Fake News Detection System</h1>
-    <p style='color: #00ff88; font-size: 16px;'>Using AI-Powered Machine Learning | Accuracy: 99.18%</p>
+    <p style='color: #00ff88; font-size: 16px;'>Using AI-Powered Machine Learning | Best Model: {best_model_name or 'N/A'} | Accuracy: {best_model_accuracy}</p>
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
     
     st.markdown("---")
     
@@ -512,14 +562,8 @@ def main() -> None:
             )
             
             st.markdown("---")
-            st.write("**Model Accuracy:**")
-            if "Naive" in algo:
-                st.write("🟢 96.28% Accuracy")
-            else:
-                st.write("🟢 99.18% Accuracy")
-            
-            st.markdown("---")
-            st.caption("💡 **Tip:** Naive Bayes is more balanced for diverse content.")
+            selected_model_name = "Naive Bayes (TF-IDF)" if algo.startswith("Naive") else "Logistic Regression (TF-IDF)"
+            st.metric("Model Accuracy", get_model_accuracy(model_metrics, selected_model_name))
             st.markdown('</div>', unsafe_allow_html=True)
         
         with col_input:
@@ -540,9 +584,9 @@ def main() -> None:
             
             col1, col2, col3 = st.columns([1.5, 1, 0.5])
             with col1:
-                submitted = st.button("🔍 Analyze Now", use_container_width=True, key="analyze_btn", help="Analyze the text with selected model")
+                submitted = st.button("🔍 Analyze Now", width="stretch", key="analyze_btn", help="Analyze the text with selected model")
             with col2:
-                if st.button("🗑️ Clear", use_container_width=True, key="clear_btn", help="Clear the input text"):
+                if st.button("🗑️ Clear", width="stretch", key="clear_btn", help="Clear the input text"):
                     st.session_state.text_input_key += 1
                     st.rerun()
             
@@ -562,37 +606,8 @@ def main() -> None:
             # Display result
             display_prediction_result(pred, confidence, user_text, algo, model)
         
-        # Example predictions section
         st.markdown("---")
-        st.markdown("### 💡 **TRY EXAMPLES**")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown('<div class="advanced-card">', unsafe_allow_html=True)
-            st.write("**✅ Example: Authentic News**")
-            example_real = "Scientists discover new treatment for cancer through years of research at major medical institutions."
-            if st.button("Test This Example", key="ex_real", use_container_width=True):
-                with st.spinner("Analyzing..."):
-                    nb, lr = load_models()
-                    model = nb if algo.startswith("Naive") else lr
-                    pred, confidence = predict_with_confidence(model, example_real)
-                display_prediction_result(pred, confidence, example_real, algo, model)
-            st.caption(example_real[:80] + "...")
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown('<div class="advanced-card">', unsafe_allow_html=True)
-            st.write("**🔴 Example: Suspicious Content**")
-            example_fake = "SHOCKING!!! Celebrities hate this one weird trick! Click now before they DELETE this!!!"
-            if st.button("Test This Example", key="ex_fake", use_container_width=True):
-                with st.spinner("Analyzing..."):
-                    nb, lr = load_models()
-                    model = nb if algo.startswith("Naive") else lr
-                    pred, confidence = predict_with_confidence(model, example_fake)
-                display_prediction_result(pred, confidence, example_fake, algo, model)
-            st.caption(example_fake[:80] + "...")
-            st.markdown('</div>', unsafe_allow_html=True)
+        st.info("Use the input box above and click Analyze Now to test the selected model.")
     
     # PAGE: Batch Processing
     elif page == "📊 Batch Processing":
@@ -627,7 +642,7 @@ def main() -> None:
             nb, lr = load_models()
             model = nb if algo.startswith("Naive") else lr
             
-            if st.button("🚀 Process Batch", use_container_width=True, key="batch_process"):
+            if st.button("🚀 Process Batch", width="stretch", key="batch_process"):
                 with st.spinner("🔄 Processing batch... Analyzing each article with AI"):
                     results_df = process_batch_csv(uploaded_file, algo, model)
                 
@@ -651,7 +666,7 @@ def main() -> None:
                     
                     st.markdown("---")
                     st.markdown("#### 📋 **Detailed Results**")
-                    st.dataframe(results_df, use_container_width=True, hide_index=True)
+                    st.dataframe(results_df, width="stretch", hide_index=True)
                     
                     # Visualizations
                     st.markdown("---")
@@ -668,7 +683,7 @@ def main() -> None:
                             marker=dict(colors=['#FF6B6B', '#51CF66'])
                         )])
                         fig.update_layout(title="Prediction Distribution", height=400)
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, width="stretch")
                     
                     with col2:
                         # Confidence distribution
@@ -679,7 +694,7 @@ def main() -> None:
                             marker=dict(color='#4C72B0')
                         )])
                         fig.update_layout(title="Confidence Score Distribution", xaxis_title="Confidence %", height=400)
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, width="stretch")
                     
                     # Download results
                     st.markdown("---")
@@ -689,7 +704,7 @@ def main() -> None:
                         data=csv,
                         file_name=f"batch_predictions_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                         mime="text/csv",
-                        use_container_width=True
+                        width="stretch"
                     )
     
     # PAGE: Model Analytics
@@ -702,11 +717,11 @@ def main() -> None:
             st.markdown('<div class="advanced-card">', unsafe_allow_html=True)
             st.subheader("🤖 **Models Used**")
             st.write("• **Naive Bayes** (MultinomialNB)")
-            st.write("  - Accuracy: 96.28%")
+            st.write(f"  - Accuracy: {get_model_accuracy(model_metrics, 'Naive Bayes (TF-IDF)')}")
             st.write("  - Best for: Balanced predictions")
             st.write("")
             st.write("• **Logistic Regression** (Saga solver)")
-            st.write("  - Accuracy: 99.18%")
+            st.write(f"  - Accuracy: {get_model_accuracy(model_metrics, 'Logistic Regression (TF-IDF)')}")
             st.write("  - Best for: High precision")
             st.markdown('</div>', unsafe_allow_html=True)
         
@@ -767,7 +782,7 @@ def main() -> None:
             
             st.markdown("---")
             st.markdown("#### 📋 **Full Metrics Table**")
-            st.dataframe(metrics_df, use_container_width=True, hide_index=True)
+            st.dataframe(metrics_df, width="stretch", hide_index=True)
         else:
             st.info("📊 No metrics file found. Train models to generate performance metrics.")
         
@@ -808,7 +823,7 @@ Pipeline Architecture:
             
             st.markdown("---")
             st.markdown("#### 📋 **Recent Predictions**")
-            st.dataframe(history_df.iloc[::-1], use_container_width=True, hide_index=True)
+            st.dataframe(history_df.iloc[::-1], width="stretch", hide_index=True)
             
             # Export history
             st.markdown("---")
@@ -818,11 +833,11 @@ Pipeline Architecture:
                 data=csv,
                 file_name=f"prediction_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 mime="text/csv",
-                use_container_width=True
+                width="stretch"
             )
             
             # Clear history
-            if st.button("🗑️ Clear History", use_container_width=True, key="clear_history"):
+            if st.button("🗑️ Clear History", width="stretch", key="clear_history"):
                 st.session_state.prediction_history = []
                 st.success("✅ History cleared!")
                 st.rerun()
